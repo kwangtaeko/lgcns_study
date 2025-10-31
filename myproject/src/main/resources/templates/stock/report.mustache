@@ -1,0 +1,179 @@
+{{>layouts/header}}
+
+<div class="container my-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h3 class="fw-bold mb-0"><i class="bi bi-speedometer2"></i> 주식 대시보드</h3>
+        <a href="/stock/getStock" class="btn btn-outline-secondary">
+            <i class="bi bi-table"></i> 목록 보기
+        </a>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-muted small mb-1">총 종목 수</div>
+                            <h4 id="sumCount" class="fw-bold mb-0">-</h4>
+                        </div>
+                        <i class="bi bi-collection fs-1 text-primary"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-muted small mb-1">총 시가총액</div>
+                            <h4 id="sumMarketCap" class="fw-bold mb-0">-</h4>
+                            <div class="small text-muted">(원)</div>
+                        </div>
+                        <i class="bi bi-cash-coin fs-1 text-success"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-muted small mb-1">상승 / 하락</div>
+                            <h4 id="riseFallRatio" class="fw-bold mb-0">-</h4>
+                            <div class="small"><span class="text-primary">상승</span> / <span class="text-danger">하락</span></div>
+                        </div>
+                        <i class="bi bi-activity fs-1 text-warning"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-md-6 col-lg-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-muted small mb-1">최고 등락률</div>
+                            <h4 id="topRate" class="fw-bold mb-0">-</h4>
+                            <div id="topRateName" class="small text-muted">-</div>
+                        </div>
+                        <i class="bi bi-graph-up-arrow fs-1 text-danger"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 차트 -->
+    <div class="row g-3">
+        <div class="col-lg-6 col-12">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-pie-chart"></i> 업종별 시가총액 비중</h5>
+                    <canvas id="sectorChart" height="260"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6 col-12">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-bar-chart-steps"></i> 거래량 Top 10</h5>
+                    <canvas id="volumeChart" height="260"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-graph-up-arrow"></i> 등락률 상위 / 하위</h5>
+                    <canvas id="rateChart" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{>layouts/footer}}
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js"></script>
+
+<!-- 서버에서 전달된 JSON 데이터 -->
+<script id="stock-data" type="application/json">
+  {{{stockListJson}}}
+</script>
+
+<script>
+    (() => {
+      const stocks = JSON.parse(document.getElementById("stock-data").textContent || "[]");
+      if (!stocks.length) return;
+
+      const fmtInt = n => (n ?? 0).toLocaleString("ko-KR");
+      const fmtMoney = n => (n ?? 0).toLocaleString("ko-KR");
+
+      // 기본 통계
+      const totalCount = stocks.length;
+      const totalMarketCap = stocks.reduce((s, x) => s + (Number(x.market_cap) || 0), 0);
+      const rising = stocks.filter(x => Number(x.rate) > 0).length;
+      const falling = totalCount - rising;
+      const topStock = stocks.reduce((max, x) => (!max || Number(x.rate) > Number(max.rate)) ? x : max, null);
+
+      // 업종별 시가총액
+      const sectorMap = {};
+      stocks.forEach(s => {
+        const key = s.sector || "기타";
+        sectorMap[key] = (sectorMap[key] || 0) + (Number(s.market_cap) || 0);
+      });
+      const sectorLabels = Object.keys(sectorMap);
+      const sectorValues = Object.values(sectorMap);
+
+      // 거래량 Top 10
+      const top10 = [...stocks].sort((a, b) => b.volume - a.volume).slice(0, 10);
+      const volumeLabels = top10.map(x => x.name);
+      const volumeValues = top10.map(x => x.volume);
+
+      // 등락률 Top5 / Bottom5
+      const sortedRate = [...stocks].sort((a, b) => b.rate - a.rate);
+      const top5 = sortedRate.slice(0, 5);
+      const bottom5 = sortedRate.slice(-5).reverse();
+      const rateLabels = [...top5.map(x => x.name), ...bottom5.map(x => x.name)];
+      const rateValues = [...top5.map(x => x.rate), ...bottom5.map(x => x.rate)];
+
+      // 카드 바인딩
+      document.getElementById("sumCount").textContent = fmtInt(totalCount);
+      document.getElementById("sumMarketCap").textContent = fmtMoney(totalMarketCap);
+      document.getElementById("riseFallRatio").textContent = `${fmtInt(rising)} / ${fmtInt(falling)}`;
+      if (topStock) {
+        document.getElementById("topRate").textContent = `${topStock.rate.toFixed(2)}%`;
+        document.getElementById("topRateName").textContent = topStock.name;
+      }
+
+      // 공통 옵션
+      const opts = { responsive: true, plugins: { legend: { position: "bottom" } } };
+
+      // 차트 생성 (중복 X)
+      new Chart(document.getElementById("sectorChart"), {
+        type: "doughnut",
+        data: { labels: sectorLabels, datasets: [{ data: sectorValues, backgroundColor: ["#4285F4","#34A853","#FBBC05","#EA4335","#999"] }] },
+        options: opts
+      });
+
+      new Chart(document.getElementById("volumeChart"), {
+        type: "bar",
+        data: { labels: volumeLabels, datasets: [{ label: "거래량", data: volumeValues, backgroundColor: "#36A2EB" }] },
+        options: { ...opts, scales: { y: { ticks: { callback: v => v.toLocaleString("ko-KR") } } } }
+      });
+
+      new Chart(document.getElementById("rateChart"), {
+        type: "bar",
+        data: { labels: rateLabels, datasets: [{ label: "등락률 (%)", data: rateValues, backgroundColor: rateValues.map(v => v >= 0 ? "#4CAF50" : "#E74C3C") }] },
+        options: { ...opts, scales: { y: { ticks: { callback: v => v + "%" } } } }
+      });
+    })();
+</script>

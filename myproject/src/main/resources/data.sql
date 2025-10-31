@@ -1,0 +1,2 @@
+--insert into stock(code, name, price, rate, volume, market_cap, sector)
+--values ('005930', '삼성전자', 100000, 2, 50, 300000000, '반도체');
